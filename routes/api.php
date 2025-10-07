@@ -4,6 +4,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 use App\Http\Controllers\API\AuthController;
 use App\Http\Controllers\API\MoodController;
 use App\Http\Controllers\API\BreathingController;
@@ -305,6 +307,279 @@ Route::middleware('auth:sanctum')->group(function () {
 // ============================================================================
 // 6. TESTING ROUTES (Public Testing Endpoints)
 // ============================================================================
+
+// Railway Debug Route
+Route::get('/debug-railway', function() {
+    return response()->json([
+        'message' => 'Railway Deployment Debug Info',
+        'status' => 'SUCCESS ✅',
+        'deployment_info' => [
+            'environment' => env('APP_ENV'),
+            'app_name' => env('APP_NAME'),
+            'app_url' => env('APP_URL'),
+            'database_host' => env('DB_HOST'),
+            'php_version' => phpversion(),
+            'laravel_version' => app()->version()
+        ],
+        'current_time' => now()->format('Y-m-d H:i:s T'),
+        'request_info' => [
+            'method' => request()->method(),
+            'url' => request()->fullUrl(),
+            'ip' => request()->ip(),
+            'user_agent' => request()->header('User-Agent')
+        ],
+        'available_endpoints' => [
+            '/api/halo',
+            '/api/testing', 
+            '/api/quranicare',
+            '/api/test/health',
+            '/api/debug-railway',
+            '/api/debug-routes',
+            '/api/auth/register',
+            '/api/auth/login'
+        ],
+        'note' => 'Kalau ini muncul, berarti API Railway sudah jalan! 🎉'
+    ]);
+});
+
+// Debug Routes untuk cek controller
+Route::get('/debug-routes', function() {
+    try {
+        // Test if AuthController can be instantiated
+        $authController = new \App\Http\Controllers\API\AuthController();
+        $authControllerStatus = 'OK ✅';
+    } catch (\Exception $e) {
+        $authControllerStatus = 'ERROR ❌: ' . $e->getMessage();
+    }
+    
+    // Get all registered routes
+    $routes = [];
+    foreach (Route::getRoutes() as $route) {
+        if (str_starts_with($route->uri(), 'api/')) {
+            $routes[] = [
+                'method' => implode('|', $route->methods()),
+                'uri' => $route->uri(),
+                'name' => $route->getName(),
+                'action' => $route->getActionName()
+            ];
+        }
+    }
+    
+    return response()->json([
+        'message' => 'Routes Debug Information',
+        'controller_tests' => [
+            'AuthController' => $authControllerStatus
+        ],
+        'auth_routes_registered' => [
+            'POST /api/auth/register' => 'Should work',
+            'POST /api/auth/login' => 'Should work',
+            'POST /api/auth/logout' => 'Should work (with auth)',
+            'GET /api/auth/me' => 'Should work (with auth)'
+        ],
+        'total_registered_routes' => count($routes),
+        'sample_routes' => array_slice($routes, 0, 10),
+        'timestamp' => now()->format('Y-m-d H:i:s')
+    ]);
+});
+
+// ============================================================================
+// DIRECT LOGIN & REGISTER ROUTES (Railway Fix)
+// ============================================================================
+
+// Direct Login Route
+Route::post('/login', function (Request $request) {
+    try {
+        $credentials = $request->validate([
+            'email' => 'required|email',
+            'password' => 'required|string|min:6'
+        ]);
+
+        if (!Auth::attempt($credentials)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Email atau password salah',
+                'errors' => ['auth' => 'Kredensial tidak valid']
+            ], 401);
+        }
+
+        $user = Auth::user();
+        $token = $user->createToken('QuraniCareToken')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Login berhasil! Selamat datang kembali 🌙',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'email_verified_at' => $user->email_verified_at,
+                    'created_at' => $user->created_at
+                ],
+                'token' => $token,
+                'token_type' => 'Bearer'
+            ]
+        ]);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Data tidak valid',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan server',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Direct Register Route
+Route::post('/register', function (Request $request) {
+    try {
+        $validatedData = $request->validate([
+            'name' => 'required|string|max:255',
+            'email' => 'required|string|email|max:255|unique:users',
+            'password' => 'required|string|min:6|confirmed',
+            'gender' => 'nullable|in:male,female',
+            'birth_date' => 'nullable|date',
+            'location' => 'nullable|string|max:255'
+        ]);
+
+        $user = \App\Models\User::create([
+            'name' => $validatedData['name'],
+            'email' => $validatedData['email'],
+            'password' => Hash::make($validatedData['password']),
+            'gender' => $validatedData['gender'] ?? 'male',
+            'birth_date' => $validatedData['birth_date'] ?? null,
+            'location' => $validatedData['location'] ?? null,
+            'profile_picture' => null,
+            'bio' => 'Assalamu\'alaikum, saya pengguna baru QuraniCare 🌙',
+        ]);
+
+        $token = $user->createToken('QuraniCareToken')->plainTextToken;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Akun berhasil dibuat! Selamat bergabung dengan QuraniCare 🌙✨',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'gender' => $user->gender,
+                    'birth_date' => $user->birth_date,
+                    'location' => $user->location,
+                    'created_at' => $user->created_at
+                ],
+                'token' => $token,
+                'token_type' => 'Bearer'
+            ]
+        ], 201);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Data tidak valid',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan server',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+});
+
+// Direct Logout Route
+Route::post('/logout', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        if ($user) {
+            // Revoke current token
+            $user->tokens()->delete();
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Logout berhasil. Barakallahu fiikum! 🤲'
+            ]);
+        }
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'User tidak ditemukan'
+        ], 401);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terjadi kesalahan server',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// User Profile Route
+Route::get('/me', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'gender' => $user->gender,
+                'birth_date' => $user->birth_date,
+                'location' => $user->location,
+                'bio' => $user->bio,
+                'profile_picture' => $user->profile_picture,
+                'email_verified_at' => $user->email_verified_at,
+                'created_at' => $user->created_at,
+                'updated_at' => $user->updated_at
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengambil data user',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Test Authentication Routes (Alternative)
+Route::prefix('test-auth')->group(function() {
+    Route::post('register', function(Request $request) {
+        try {
+            $controller = new \App\Http\Controllers\API\AuthController();
+            return $controller->register($request);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Controller error: ' . $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
+        }
+    });
+    
+    Route::post('login', function(Request $request) {
+        try {
+            $controller = new \App\Http\Controllers\API\AuthController();
+            return $controller->login($request);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Controller error: ' . $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ], 500);
+        }
+    });
+});
 
 // Fun Testing Routes
 Route::get('/halo', function() {
