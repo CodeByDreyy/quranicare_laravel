@@ -302,9 +302,230 @@ Route::middleware('auth:sanctum')->group(function () {
 });
 
 // ============================================================================
-// 6. TESTING ROUTES (Public Journal - Remove in Production)
+// 6. TESTING ROUTES (Public Testing Endpoints)
 // ============================================================================
+
+// Fun Testing Routes
+Route::get('/halo', function() {
+    return response()->json([
+        'message' => 'Halo! QuraniCare API siap melayani! 🌙✨',
+        'status' => 'success',
+        'app' => env('APP_NAME', 'QuraniCare'),
+        'version' => '1.0.0',
+        'environment' => env('APP_ENV', 'production'),
+        'time' => now()->format('Y-m-d H:i:s'),
+        'islamic_greeting' => 'Assalamu\'alaikum Warahmatullahi Wabarakatuh',
+        'developer' => 'CodeByDreyy',
+        'fun_fact' => 'API ini dibuat dengan ❤️ untuk kesehatan mental umat Islam'
+    ]);
+});
+
+Route::get('/testing', function() {
+    return response()->json([
+        'message' => 'QuraniCare API Testing Endpoint! 🚀',
+        'status' => 'active',
+        'endpoints_available' => [
+            'GET /api/halo' => 'Greeting endpoint',
+            'GET /api/testing' => 'This endpoint',
+            'GET /api/quranicare' => 'App info & stats',
+            'GET /api/test/health' => 'Health check',
+            'GET /api/test/database' => 'Database connection test',
+            'GET /api/test/features' => 'Available features list',
+            'POST /api/chat' => 'Gemini AI Chat',
+            'POST /api/auth/register' => 'User registration',
+            'POST /api/auth/login' => 'User login'
+        ],
+        'database_status' => 'connected ✅',
+        'last_test' => now()->format('Y-m-d H:i:s'),
+        'server_info' => [
+            'php_version' => phpversion(),
+            'laravel_version' => app()->version(),
+            'timezone' => config('app.timezone')
+        ]
+    ]);
+});
+
+Route::get('/quranicare', function() {
+    // Get some basic stats
+    $userCount = \App\Models\User::count();
+    $moodCount = \App\Models\Mood::count();
+    $journalCount = \App\Models\Journal::count();
+    $audioCategoryCount = \App\Models\AudioCategory::count();
+    $dzikirCount = \App\Models\DoaDzikir::count();
+    
+    return response()->json([
+        'app_name' => 'QuraniCare - Islamic Mental Health App',
+        'tagline' => 'Menyembuhkan Jiwa dengan Cahaya Al-Quran 🌙',
+        'status' => 'Alhamdulillah, berjalan dengan baik! 🤲',
+        'features' => [
+            '🕌 Quran Reading & Reflection',
+            '📿 Dzikir & Doa Daily',
+            '🧘‍♂️ Breathing Exercises (Nafas Sakinah)',
+            '🎵 Audio Relaxation Islami',
+            '📔 Journal Refleksi Spiritual',
+            '😊 Mood Tracking Harian',
+            '🤖 Qalbu AI Assistant',
+            '📚 Psychology Learning Islamic',
+            '📊 Sakinah Tracker Dashboard'
+        ],
+        'statistics' => [
+            'total_users' => $userCount,
+            'mood_entries' => $moodCount,
+            'journal_reflections' => $journalCount,
+            'audio_categories' => $audioCategoryCount,
+            'dzikir_doa_items' => $dzikirCount
+        ],
+        'api_info' => [
+            'version' => '1.0.0',
+            'environment' => env('APP_ENV'),
+            'last_updated' => '2025-10-07',
+            'developer' => 'CodeByDreyy',
+            'github' => 'https://github.com/CodeByDreyy/quranicare_laravel'
+        ],
+        'islamic_quote' => 'وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا - "Dan barangsiapa bertakwa kepada Allah, niscaya Dia akan mengadakan baginya jalan keluar" (QS. At-Talaq: 2)',
+        'timestamp' => now()->format('Y-m-d H:i:s T'),
+        'message' => 'Juara!! 🎉 API QuraniCare ready to serve! Barakallahu fiikum!'
+    ]);
+});
+
+// Detailed Testing Routes
 Route::prefix('test')->group(function () {
+    
+    // Health Check
+    Route::get('health', function() {
+        try {
+            // Test database connection
+            \DB::connection()->getPdo();
+            $dbStatus = 'connected ✅';
+        } catch (\Exception $e) {
+            $dbStatus = 'error ❌: ' . $e->getMessage();
+        }
+        
+        return response()->json([
+            'status' => 'healthy',
+            'timestamp' => now()->format('Y-m-d H:i:s'),
+            'checks' => [
+                'api' => 'OK ✅',
+                'database' => $dbStatus,
+                'cache' => cache()->remember('health_test', 60, fn() => 'OK ✅'),
+                'session' => session()->isStarted() ? 'active ✅' : 'inactive ⚠️',
+                'storage' => is_writable(storage_path()) ? 'writable ✅' : 'readonly ⚠️'
+            ],
+            'memory_usage' => round(memory_get_usage(true) / 1024 / 1024, 2) . ' MB',
+            'uptime' => 'Since deployment',
+            'message' => 'Alhamdulillah, semua sistem berjalan baik! 🤲'
+        ]);
+    });
+    
+    // Database Test
+    Route::get('database', function() {
+        try {
+            $tests = [];
+            
+            // Test each table
+            $tables = [
+                'users' => \App\Models\User::count(),
+                'moods' => \App\Models\Mood::count(),
+                'journals' => \App\Models\Journal::count(),
+                'audio_categories' => \App\Models\AudioCategory::count(),
+                'doa_dzikir' => \App\Models\DoaDzikir::count(),
+                'quran_surahs' => \App\Models\QuranSurah::count(),
+                'quran_ayahs' => \App\Models\QuranAyah::count(),
+                'breathing_exercises' => \App\Models\BreathingExercise::count(),
+                'psychology_materials' => \App\Models\PsychologyMaterial::count()
+            ];
+            
+            foreach ($tables as $table => $count) {
+                $tests[$table] = [
+                    'status' => 'OK ✅',
+                    'record_count' => $count
+                ];
+            }
+            
+            return response()->json([
+                'database_status' => 'All tables accessible ✅',
+                'connection' => 'MySQL connected to ' . config('database.connections.mysql.host'),
+                'tables' => $tests,
+                'timestamp' => now()->format('Y-m-d H:i:s'),
+                'message' => 'Database sehat walafiat! 💪'
+            ]);
+            
+        } catch (\Exception $e) {
+            return response()->json([
+                'database_status' => 'Error ❌',
+                'error' => $e->getMessage(),
+                'timestamp' => now()->format('Y-m-d H:i:s')
+            ], 500);
+        }
+    });
+    
+    // Features List
+    Route::get('features', function() {
+        return response()->json([
+            'app_features' => [
+                'authentication' => [
+                    'register' => '/api/auth/register',
+                    'login' => '/api/auth/login',
+                    'logout' => '/api/auth/logout',
+                    'forgot_password' => '/api/auth/forgot-password'
+                ],
+                'quran' => [
+                    'get_surahs' => '/api/public/quran/surahs',
+                    'get_ayahs' => '/api/public/quran/surahs/{id}/ayahs',
+                    'search' => '/api/public/quran/search',
+                    'bookmarks' => '/api/quran/bookmarks [AUTH]'
+                ],
+                'mood_tracking' => [
+                    'record_mood' => '/api/mood [POST, AUTH]',
+                    'mood_history' => '/api/mood/history [AUTH]',
+                    'mood_stats' => '/api/mood/statistics [AUTH]'
+                ],
+                'journal' => [
+                    'create_journal' => '/api/journal [POST, AUTH]',
+                    'ayah_reflection' => '/api/journal/ayah/{id}/reflection [AUTH]',
+                    'recent_reflections' => '/api/journal/reflections/recent [AUTH]'
+                ],
+                'dzikir_doa' => [
+                    'get_all' => '/api/doa-dzikir',
+                    'by_groups' => '/api/doa-dzikir/groups',
+                    'start_session' => '/api/doa-dzikir/sessions [POST, AUTH]'
+                ],
+                'audio_relax' => [
+                    'get_categories' => '/api/audio-categories',
+                    'get_audio' => '/api/audio-relax/{id}',
+                    'play_tracking' => '/api/audio/{id}/play [POST, AUTH]'
+                ],
+                'breathing' => [
+                    'get_exercises' => '/api/breathing-exercise/exercises/{id}',
+                    'start_session' => '/api/breathing/sessions [POST, AUTH]'
+                ],
+                'ai_chat' => [
+                    'gemini_chat' => '/api/chat [POST]',
+                    'qalbu_assistant' => '/api/qalbu/conversations [AUTH]'
+                ],
+                'psychology' => [
+                    'get_materials' => '/api/public/psychology/materials/{id}',
+                    'update_progress' => '/api/psychology/materials/{id}/progress [POST, AUTH]'
+                ],
+                'sakinah_tracker' => [
+                    'daily_recap' => '/api/sakinah-tracker/daily/{date} [AUTH]',
+                    'monthly_stats' => '/api/sakinah-tracker/monthly/{year}/{month} [AUTH]',
+                    'dashboard' => '/api/sakinah-tracker/dashboard-summary [AUTH]'
+                ]
+            ],
+            'testing_endpoints' => [
+                'health_check' => '/api/test/health',
+                'database_test' => '/api/test/database',
+                'app_info' => '/api/quranicare',
+                'greeting' => '/api/halo'
+            ],
+            'note' => '[AUTH] = Requires Authorization Bearer Token',
+            'message' => 'Lengkap kan fiturnya? Alhamdulillah! 🎉',
+            'timestamp' => now()->format('Y-m-d H:i:s')
+        ]);
+    });
+    
+    // Original Journal Testing Routes
     Route::prefix('journal')->group(function () {
         Route::get('ayah/{ayah}', [JournalController::class, 'getAyahReflections']);
         Route::post('ayah/{ayah}/reflection', [JournalController::class, 'createAyahReflection']);
