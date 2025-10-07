@@ -3,6 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\API\AuthController;
 use App\Http\Controllers\API\MoodController;
 use App\Http\Controllers\API\BreathingController;
@@ -345,6 +346,7 @@ Route::get('/testing', function() {
     ]);
 });
 
+
 Route::get('/quranicare', function() {
     // Get some basic stats
     $userCount = \App\Models\User::count();
@@ -384,7 +386,7 @@ Route::get('/quranicare', function() {
         ],
         'islamic_quote' => 'وَمَن يَتَّقِ اللَّهَ يَجْعَل لَّهُ مَخْرَجًا - "Dan barangsiapa bertakwa kepada Allah, niscaya Dia akan mengadakan baginya jalan keluar" (QS. At-Talaq: 2)',
         'timestamp' => now()->format('Y-m-d H:i:s T'),
-        'message' => 'Juara!! 🎉 API QuraniCare ready to serve! Barakallahu fiikum!'
+        'message' => 'Juara!! API QuraniCare ready to serve! Barakallahu fiikum!'
     ]);
 });
 
@@ -395,7 +397,7 @@ Route::prefix('test')->group(function () {
     Route::get('health', function() {
         try {
             // Test database connection
-            \DB::connection()->getPdo();
+            DB::connection()->getPdo();
             $dbStatus = 'connected ✅';
         } catch (\Exception $e) {
             $dbStatus = 'error ❌: ' . $e->getMessage();
