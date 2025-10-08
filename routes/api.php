@@ -223,6 +223,116 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // 5.6 Journal & Reflection System
     Route::prefix('journal')->group(function () {
+        // User-specific Journal Routes
+        Route::get('user', function (Request $request) {
+            try {
+                $user = $request->user();
+                
+                // Get user's journals with pagination
+                $journals = \App\Models\Journal::where('user_id', $user->id)
+                    ->orderBy('created_at', 'desc')
+                    ->paginate(15);
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Data jurnal user berhasil diambil',
+                    'data' => [
+                        'user' => [
+                            'id' => $user->id,
+                            'name' => $user->name,
+                            'email' => $user->email
+                        ],
+                        'journals' => $journals->items(),
+                        'pagination' => [
+                            'current_page' => $journals->currentPage(),
+                            'total' => $journals->total(),
+                            'per_page' => $journals->perPage(),
+                            'last_page' => $journals->lastPage(),
+                        ]
+                    ]
+                ]);
+                
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengambil data jurnal user',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        });
+        
+        Route::get('user/recent', function (Request $request) {
+            try {
+                $user = $request->user();
+                
+                // Get 5 jurnal terbaru user
+                $recentJournals = \App\Models\Journal::where('user_id', $user->id)
+                    ->orderBy('created_at', 'desc')
+                    ->limit(5)
+                    ->get();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Jurnal terbaru user berhasil diambil',
+                    'data' => [
+                        'user_id' => $user->id,
+                        'journals' => $recentJournals,
+                        'total_journals' => \App\Models\Journal::where('user_id', $user->id)->count()
+                    ]
+                ]);
+                
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengambil jurnal terbaru user',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        });
+
+        Route::get('user/stats', function (Request $request) {
+            try {
+                $user = $request->user();
+                
+                $totalJournals = \App\Models\Journal::where('user_id', $user->id)->count();
+                $favoriteJournals = \App\Models\Journal::where('user_id', $user->id)
+                    ->where('is_favorite', true)->count();
+                $privateJournals = \App\Models\Journal::where('user_id', $user->id)
+                    ->where('is_private', true)->count();
+                
+                // Jurnal per bulan (last 6 months)
+                $monthlyStats = \App\Models\Journal::where('user_id', $user->id)
+                    ->where('created_at', '>=', now()->subMonths(6))
+                    ->selectRaw('MONTH(created_at) as month, YEAR(created_at) as year, COUNT(*) as count')
+                    ->groupBy('year', 'month')
+                    ->orderBy('year', 'desc')
+                    ->orderBy('month', 'desc')
+                    ->get();
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Statistik jurnal user berhasil diambil',
+                    'data' => [
+                        'user_id' => $user->id,
+                        'stats' => [
+                            'total_journals' => $totalJournals,
+                            'favorite_journals' => $favoriteJournals,
+                            'private_journals' => $privateJournals,
+                            'public_journals' => $totalJournals - $privateJournals,
+                        ],
+                        'monthly_stats' => $monthlyStats
+                    ]
+                ]);
+                
+            } catch (\Exception $e) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal mengambil statistik jurnal user',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+        });
+        
         // Basic Journal CRUD
         Route::get('/', [JournalController::class, 'index']);
         Route::post('/', [JournalController::class, 'store']);
