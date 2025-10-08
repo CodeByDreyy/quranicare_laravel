@@ -6,6 +6,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\API\AuthController;
 use App\Http\Controllers\API\MoodController;
 use App\Http\Controllers\API\BreathingController;
@@ -763,6 +765,221 @@ Route::get('/mood-range/{startDate}/{endDate}', function (Request $request, $sta
     }
 })->middleware('auth:sanctum');
 
+// ============================================================================
+// PROFILE MANAGEMENT API (Direct Routes for User Profile)
+// ============================================================================
+
+// Get Current Profile (untuk load data di form)
+Route::get('/user/profile', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Data profile berhasil diambil',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'gender' => $user->gender,
+                    'birth_date' => $user->birth_date,
+                    'bio' => $user->bio,
+                    'location' => $user->location,
+                    'preferred_language' => $user->preferred_language,
+                    'profile_picture' => $user->profile_picture,
+                    'profile_picture_url' => $user->profile_picture ? asset('storage/' . $user->profile_picture) : null,
+                    'email_verified_at' => $user->email_verified_at,
+                    'is_active' => $user->is_active,
+                    'last_login_at' => $user->last_login_at,
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at
+                ]
+            ]
+        ]);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengambil data profile',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Update Profile (Name, Email/Username, Password)
+Route::put('/user/profile', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        // Validation rules - hanya name, email, dan password
+        $validatedData = $request->validate([
+            'name' => 'sometimes|required|string|max:255',
+            'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $user->id,
+            'password' => 'sometimes|required|string|min:6|confirmed',
+            'password_confirmation' => 'sometimes|required_with:password|string|min:6'
+        ]);
+
+        // Prepare update data
+        $updateData = [];
+        
+        // Update name jika ada
+        if (isset($validatedData['name'])) {
+            $updateData['name'] = $validatedData['name'];
+        }
+        
+        // Update email jika ada
+        if (isset($validatedData['email'])) {
+            $updateData['email'] = $validatedData['email'];
+        }
+        
+        // Update password jika ada (hash dulu)
+        if (isset($validatedData['password'])) {
+            $updateData['password'] = Hash::make($validatedData['password']);
+        }
+
+        // Update user data
+        if (!empty($updateData)) {
+            $user->update($updateData);
+            $user->refresh();
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Profile berhasil diupdate! Alhamdulillah ✨',
+            'data' => [
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'created_at' => $user->created_at,
+                    'updated_at' => $user->updated_at
+                ]
+            ]
+        ]);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Data tidak valid',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengupdate profile',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Change Password (Separate endpoint for security)
+Route::put('/user/password', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        // Validation
+        $validatedData = $request->validate([
+            'current_password' => 'required|string',
+            'password' => 'required|string|min:6|confirmed',
+            'password_confirmation' => 'required|string|min:6'
+        ]);
+
+        // Check current password
+        if (!Hash::check($validatedData['current_password'], $user->password)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Password lama tidak sesuai',
+                'errors' => ['current_password' => 'Password lama salah']
+            ], 422);
+        }
+
+        // Update password
+        $user->update([
+            'password' => Hash::make($validatedData['password'])
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Password berhasil diubah! Jangan lupa password barunya ya 🔐',
+            'data' => [
+                'updated_at' => $user->updated_at
+            ]
+        ]);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Data tidak valid',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengubah password',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Update Profile Picture (Upload gambar)
+Route::post('/user/profile/picture', function (Request $request) {
+    try {
+        $user = $request->user();
+        
+        // Validation
+        $request->validate([
+            'profile_picture' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
+        ]);
+
+        if ($request->hasFile('profile_picture')) {
+            $file = $request->file('profile_picture');
+            $filename = 'profile_' . $user->id . '_' . time() . '.' . $file->getClientOriginalExtension();
+            
+            // Store in storage/app/public/profiles
+            $path = $file->storeAs('profiles', $filename, 'public');
+            
+            // Delete old profile picture if exists
+            if ($user->profile_picture) {
+                Storage::disk('public')->delete($user->profile_picture);
+            }
+            
+            // Update user profile picture
+            $user->update([
+                'profile_picture' => $path
+            ]);
+            
+            return response()->json([
+                'success' => true,
+                'message' => 'Foto profile berhasil diupdate! Mashaa Allah ✨',
+                'data' => [
+                    'profile_picture' => $path,
+                    'profile_picture_url' => asset('storage/' . $path)
+                ]
+            ]);
+        }
+        
+        return response()->json([
+            'success' => false,
+            'message' => 'File gambar tidak ditemukan'
+        ], 400);
+
+    } catch (\Illuminate\Validation\ValidationException $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'File tidak valid',
+            'errors' => $e->errors()
+        ], 422);
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengupload foto profile',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
 // Test Authentication Routes (Alternative)
 Route::prefix('test-auth')->group(function() {
     Route::post('register', function(Request $request) {
@@ -1212,3 +1429,55 @@ Route::prefix('admin')->group(function () {
         Route::get('dzikir-doa/{id}', [AdminDashboardController::class, 'getDzikirDoaDetail']);
     });
 });
+
+// Simple Profile Edit - hanya name, email, password
+Route::put('/profile/edit', function (Request $request) {
+    $user = Auth::user();
+    
+    $validator = Validator::make($request->all(), [
+        'name' => 'required|string|max:255',
+        'email' => 'required|email|unique:users,email,' . $user->id,
+        'password' => 'nullable|confirmed|min:6',
+    ]);
+
+    if ($validator->fails()) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Alhamdulillah, ada beberapa yang perlu diperbaiki',
+            'errors' => $validator->errors(),
+            'bismillah' => 'Perbaiki input dengan penuh keberkahan'
+        ], 422);
+    }
+
+    try {
+        $user->name = $request->name;
+        $user->email = $request->email;
+        
+        // Update password only if provided
+        if ($request->filled('password')) {
+            $user->password = Hash::make($request->password);
+        }
+
+        $user->save();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Barakallahu fiik! Profile berhasil diperbarui',
+            'data' => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'updated_at' => $user->updated_at,
+            ],
+            'alhamdulillah' => 'Profile telah diperbarui dengan berkah Allah 🌸'
+        ], 200);
+        
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Astaghfirullah, terjadi kesalahan saat memperbarui profile',
+            'error' => $e->getMessage(),
+            'istighfar' => 'Mari kita coba lagi dengan sabar dan doa'
+        ], 500);
+    }
+})->middleware('auth:sanctum');
