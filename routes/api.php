@@ -189,6 +189,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('history', [MoodController::class, 'getHistory']);
         Route::put('{mood}', [MoodController::class, 'update']);
         Route::delete('{mood}', [MoodController::class, 'destroy']);
+        
+        // Calendar & Date-based Mood Tracking
+        Route::get('calendar/{year}/{month}', [MoodController::class, 'getCalendarMoods']);
+        Route::get('calendar/range/{startDate}/{endDate}', [MoodController::class, 'getMoodsByDateRange']);
+        Route::get('daily-summary/{date}', [MoodController::class, 'getDailySummary']);
     });
 
     // 5.3 Breathing Exercises
@@ -549,6 +554,210 @@ Route::get('/me', function (Request $request) {
         return response()->json([
             'success' => false,
             'message' => 'Gagal mengambil data user',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// ============================================================================
+// MOOD CALENDAR API (Direct Routes for Calendar Integration)
+// ============================================================================
+
+// Get Mood Calendar Data for specific month/year
+Route::get('/mood-calendar/{year}/{month}', function (Request $request, $year, $month) {
+    try {
+        $user = $request->user();
+        
+        // Get all moods for the specified month
+        $moods = \App\Models\Mood::where('user_id', $user->id)
+            ->whereYear('created_at', $year)
+            ->whereMonth('created_at', $month)
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy(function($mood) {
+                return $mood->created_at->format('Y-m-d');
+            });
+
+        // Format data for calendar
+        $calendarData = [];
+        foreach ($moods as $date => $dayMoods) {
+            $calendarData[$date] = [
+                'date' => $date,
+                'mood_count' => $dayMoods->count(),
+                'moods' => $dayMoods->map(function($mood) {
+                    return [
+                        'id' => $mood->id,
+                        'type' => $mood->type,
+                        'level' => $mood->level,
+                        'note' => $mood->note,
+                        'time' => $mood->created_at->format('H:i'),
+                        'timestamp' => $mood->created_at->toISOString()
+                    ];
+                }),
+                'dominant_mood' => $dayMoods->groupBy('type')->sortByDesc(function($group) {
+                    return $group->count();
+                })->keys()->first(),
+                'average_level' => round($dayMoods->avg('level'), 1)
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'year' => (int) $year,
+                'month' => (int) $month,
+                'calendar_data' => $calendarData,
+                'total_days_with_mood' => count($calendarData),
+                'total_mood_entries' => $moods->flatten()->count()
+            ],
+            'message' => 'Data mood kalender berhasil diambil untuk ' . date('F Y', mktime(0, 0, 0, $month, 1, $year))
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengambil data mood kalender',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Get Mood Data for specific date
+Route::get('/mood-daily/{date}', function (Request $request, $date) {
+    try {
+        $user = $request->user();
+        
+        // Validate date format
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format tanggal tidak valid. Gunakan format: YYYY-MM-DD'
+            ], 400);
+        }
+
+        // Get all moods for the specific date
+        $moods = \App\Models\Mood::where('user_id', $user->id)
+            ->whereDate('created_at', $date)
+            ->orderBy('created_at', 'asc')
+            ->get();
+
+        // Calculate statistics
+        $moodStats = [
+            'total_entries' => $moods->count(),
+            'mood_types' => $moods->groupBy('type')->map(function($group, $type) {
+                return [
+                    'count' => $group->count(),
+                    'average_level' => round($group->avg('level'), 1),
+                    'entries' => $group->map(function($mood) {
+                        return [
+                            'id' => $mood->id,
+                            'level' => $mood->level,
+                            'note' => $mood->note,
+                            'time' => $mood->created_at->format('H:i')
+                        ];
+                    })
+                ];
+            }),
+            'overall_average' => $moods->count() > 0 ? round($moods->avg('level'), 1) : 0,
+            'mood_trend' => $this->calculateMoodTrend($moods)
+        ];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'date' => $date,
+                'moods' => $moods->map(function($mood) {
+                    return [
+                        'id' => $mood->id,
+                        'type' => $mood->type,
+                        'level' => $mood->level,
+                        'note' => $mood->note,
+                        'created_at' => $mood->created_at->toISOString(),
+                        'time' => $mood->created_at->format('H:i:s')
+                    ];
+                }),
+                'statistics' => $moodStats
+            ],
+            'message' => $moods->count() > 0 
+                ? "Ditemukan {$moods->count()} entri mood pada tanggal {$date}" 
+                : "Tidak ada data mood pada tanggal {$date}"
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengambil data mood harian',
+            'error' => $e->getMessage()
+        ], 500);
+    }
+})->middleware('auth:sanctum');
+
+// Get Mood Data for date range
+Route::get('/mood-range/{startDate}/{endDate}', function (Request $request, $startDate, $endDate) {
+    try {
+        $user = $request->user();
+        
+        // Validate date formats
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDate) || 
+            !preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDate)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Format tanggal tidak valid. Gunakan format: YYYY-MM-DD'
+            ], 400);
+        }
+
+        // Get moods within date range
+        $moods = \App\Models\Mood::where('user_id', $user->id)
+            ->whereBetween(DB::raw('DATE(created_at)'), [$startDate, $endDate])
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->groupBy(function($mood) {
+                return $mood->created_at->format('Y-m-d');
+            });
+
+        // Format data by date
+        $dateRangeData = [];
+        foreach ($moods as $date => $dayMoods) {
+            $dateRangeData[$date] = [
+                'date' => $date,
+                'day_name' => \Carbon\Carbon::parse($date)->locale('id')->dayName,
+                'mood_count' => $dayMoods->count(),
+                'dominant_mood' => $dayMoods->groupBy('type')->sortByDesc(function($group) {
+                    return $group->count();
+                })->keys()->first(),
+                'average_level' => round($dayMoods->avg('level'), 1),
+                'moods' => $dayMoods->map(function($mood) {
+                    return [
+                        'id' => $mood->id,
+                        'type' => $mood->type,
+                        'level' => $mood->level,
+                        'note' => $mood->note,
+                        'time' => $mood->created_at->format('H:i')
+                    ];
+                })
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'start_date' => $startDate,
+                'end_date' => $endDate,
+                'range_data' => $dateRangeData,
+                'summary' => [
+                    'total_days_with_data' => count($dateRangeData),
+                    'total_mood_entries' => $moods->flatten()->count(),
+                    'overall_average' => $moods->flatten()->count() > 0 ? 
+                        round($moods->flatten()->avg('level'), 1) : 0
+                ]
+            ],
+            'message' => "Data mood dari {$startDate} hingga {$endDate} berhasil diambil"
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Gagal mengambil data mood untuk rentang tanggal',
             'error' => $e->getMessage()
         ], 500);
     }
